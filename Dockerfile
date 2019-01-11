@@ -1,37 +1,49 @@
 ### ALPINE LINUX BASED JENKINS BUILD SLAVE INCLUDE ORACLE JDK8
-### VERSION COMMON(JAVA, MAVEN, GO, RUBY, NPM, NODE) 
-FROM alpine:3.7
+### VERSION COMMON(JAVA, MAVEN, GO, RUBY, NPM, NODE)
+### LAST AUDIT DATE : 2019. 01. 11
+
+FROM alpine:3.8
 LABEL maintainer Github:geils <isgenez@gmail.com>
 
-ENV JDK_VER=8u161 \
-    JAVA_HOME=/usr/lib/jvm/java-8-oracle \
+ENV JAVA_HOME=/usr/lib/jvm/java-1.8-openjdk \
     M2_HOME=/usr/local/maven \
-    GOROOT=/usr/local/go
+    GOROOT=/usr/local/go \
+    LANG=C.UTF-8 \
+    GLIBC_VER=2.28-r0
     
 
 RUN apk update && \
     apk add --no-cache wget ca-certificates alpine-sdk autoconf automake \
                        unzip bash coreutils openssl libstdc++ zip su-exec \
-                       ruby ruby-bundler nodejs openssh-client
+                       ruby ruby-bundler nodejs openssh-client npm
 
 RUN addgroup jenkins && adduser -G jenkins -G root -s /bin/bash -D jenkins && \
-    mkdir -p /home/jenkins/workspace && chown -R jenkins:jenkins /home/jenkins
+    mkdir -p /home/jenkins/workspace && chown -R jenkins:jenkins /home/jenkins && \
+    npm config set prefix '~/.npm~global'
 
-##########################
-### INSTALL GLIBC 2.26 ###
-##########################
-RUN wget --no-check-certificate --progress=bar:force https://raw.githubusercontent.com/andyshinn/alpine-pkg-glibc/master/sgerrand.rsa.pub \
-    -O /etc/apk/keys/sgerrand.rsa.pub && \
-    wget --no-check-certificate --progress=bar:force https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.26-r0/glibc-2.26-r0.apk \
-         https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.26-r0/glibc-bin-2.26-r0.apk \
-         https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.26-r0/glibc-i18n-2.26-r0.apk && \
-    apk add --no-cache glibc-2.26-r0.apk glibc-bin-2.26-r0.apk glibc-i18n-2.26-r0.apk && \
+#############################
+### INSTALL GLIBC 2.28-r0 ###
+#############################
+RUN echo \
+    "-----BEGIN PUBLIC KEY-----\
+    MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApZ2u1KJKUu/fW4A25y9m\
+    y70AGEa/J3Wi5ibNVGNn1gT1r0VfgeWd0pUybS4UmcHdiNzxJPgoWQhV2SSW1JYu\
+    tOqKZF5QSN6X937PTUpNBjUvLtTQ1ve1fp39uf/lEXPpFpOPL88LKnDBgbh7wkCp\
+    m2KzLVGChf83MS0ShL6G9EQIAUxLm99VpgRjwqTQ/KfzGtpke1wqws4au0Ab4qPY\
+    KXvMLSPLUp7cfulWvhmZSegr5AdhNw5KNizPqCJT8ZrGvgHypXyiFvvAH5YRtSsc\
+    Zvo9GI2e2MaZyo9/lvb+LbLEJZKEQckqRj4P26gmASrZEPStwc+yqy1ShHLA0j6m\
+    1QIDAQAB\
+    -----END PUBLIC KEY-----" | sed 's/   */\n/g' > "/etc/apk/keys/sgerrand.rsa.pub" && \
+    wget --no-check-certificate --progress=bar:force https://github.com/sgerrand/alpine-pkg-glibc/releases/download/${GLIBC_VER}/glibc-${GLIBC_VER}.apk \
+         https://github.com/sgerrand/alpine-pkg-glibc/releases/download/${GLIBC_VER}/glibc-bin-${GLIBC_VER}.apk \
+         https://github.com/sgerrand/alpine-pkg-glibc/releases/download/${GLIBC_VER}/glibc-i18n-${GLIBC_VER}.apk && \
+    apk add --no-cache glibc-${GLIBC_VER}.apk glibc-bin-${GLIBC_VER}.apk glibc-i18n-${GLIBC_VER}.apk && \
     rm /etc/apk/keys/sgerrand.rsa.pub && \
-    /usr/glibc-compat/bin/localedef -i en_US -f UTF-8 C.UTF-8 && \
-    echo "export LANG=C.UTF-8" > /etc/profile.d/locale.sh && \
+    /usr/glibc-compat/bin/localedef --force --inputfile POSIX --charmap UTF-8 "${LANG}" || true && \
+    echo "export LANG=${LANG}" > /etc/profile.d/locale.sh && \
     apk del glibc-i18n && \
     rm /root/.wget-hsts && \
-    rm glibc-2.26-r0.apk glibc-bin-2.26-r0.apk glibc-i18n-2.26-r0.apk
+    rm glibc-${GLIBC_VER}.apk glibc-bin-${GLIBC_VER}.apk glibc-i18n-${GLIBC_VER}.apk
 
  
 ########################
@@ -43,80 +55,32 @@ RUN apk add --no-cache tzdata && \
     date && apk del tzdata
 
 
-##########################
-### DOWNLOAD JDK 8u161 ###
-##########################
-RUN wget --progress=bar:force --header "Cookie: oraclelicense=accept-securebackup-cookie;" \
-    "http://download.oracle.com/otn-pub/java/jdk/8u161-b12/2f38c3b165be4555a1fa6e98c45e0808/jdk-8u161-linux-x64.tar.gz" -O /tmp/jdk-${JDK_VER}-linux-x64.tar.gz && \
-    tar -xvf /tmp/jdk-${JDK_VER}-linux-x64.tar.gz -C /tmp/ && \
-    mkdir -p /usr/lib/jvm && mv /tmp/jdk1.8.0_161 ${JAVA_HOME} && \
-    rm -rf "${JAVA_HOME}/"src.zip && \
-    rm -rf "${JAVA_HOME}/lib/missioncontrol" \
-           "${JAVA_HOME}/lib/visualvm" \
-           "${JAVA_HOME}/lib/"*javafx* \
-           "${JAVA_HOME}/jre/lib/plugin.jar" \
-           "${JAVA_HOME}/jre/lib/ext/jfxrt.jar" \
-           "${JAVA_HOME}/jre/bin/javaws" \
-           "${JAVA_HOME}/jre/lib/javaws.jar" \
-           "${JAVA_HOME}/jre/lib/desktop" \
-           "${JAVA_HOME}/jre/plugin" \
-           "${JAVA_HOME}/jre/lib/"deploy* \
-           "${JAVA_HOME}/jre/lib/"*javafx* \
-           "${JAVA_HOME}/jre/lib/"*jfx* \
-           "${JAVA_HOME}/jre/lib/amd64/libdecora_sse.so" \
-           "${JAVA_HOME}/jre/lib/amd64/"libprism_*.so \
-           "${JAVA_HOME}/jre/lib/amd64/libfxplugins.so" \ 
-           "${JAVA_HOME}/jre/lib/amd64/libglass.so" \
-           "${JAVA_HOME}/jre/lib/amd64/libgstreamer-lite.so" \
-           "${JAVA_HOME}/jre/lib/amd64/"libjavafx*.so \
-           "${JAVA_HOME}/jre/lib/amd64/"libjfx*.so && \
-    rm -rf "${JAVA_HOME}/jre/bin/jjs" \
-           "${JAVA_HOME}/jre/bin/keytool" \
-           "${JAVA_HOME}/jre/bin/orbd" \
-           "${JAVA_HOME}/jre/bin/pack200" \
-           "${JAVA_HOME}/jre/bin/policytool" \
-           "${JAVA_HOME}/jre/bin/rmid" \
-           "${JAVA_HOME}/jre/bin/rmiregistry" \
-           "${JAVA_HOME}/jre/bin/servertool" \
-           "${JAVA_HOME}/jre/bin/tnameserv" \
-           "${JAVA_HOME}/jre/bin/unpack200" \
-           "${JAVA_HOME}/jre/lib/ext/nashorn.jar" \
-           "${JAVA_HOME}/jre/lib/jfr.jar" \
-           "${JAVA_HOME}/jre/lib/jfr" \
-           "${JAVA_HOME}/jre/lib/oblique-fonts" && \
-    wget --progress=bar:force --header "Cookie: oraclelicense=accept-securebackup-cookie;" \
-        "http://download.oracle.com/otn-pub/java/jce/8/jce_policy-8.zip" -O /tmp/jce_policy-8.zip && \
-    unzip -jo -d "${JAVA_HOME}/jre/lib/security" "/tmp/jce_policy-8.zip" && \
-    rm /tmp/*
-    
+##############################
+### DOWNLOAD OPENJDK 8u191 ###
+##############################
+RUN apk add --no-cache openjdk8=8.191.12-r0
 
 ###########################
-### INSTALL MAVEN 3.5.2 ###
+### INSTALL MAVEN 3.5.4 ###
 ###########################
-RUN wget --progress=bar:force http://apache.tt.co.kr/maven/maven-3/3.5.2/binaries/apache-maven-3.5.2-bin.tar.gz -O /tmp/maven.tar.gz && \
-    cd /tmp && tar -xvf maven.tar.gz && mv /tmp/apache-maven-3.5.2 /usr/local/maven && \
-    rm -rf /tmp/maven*
+RUN apk add --no-cache maven=3.5.4-r1
 
-
-########################
-### INSTALL GO 1.9.3 ###
-########################
-RUN wget --progress=bar:force https://dl.google.com/go/go1.9.3.linux-amd64.tar.gz -O /tmp/go.tar.gz && \
-    cd /tmp && tar -xvf go.tar.gz && mv /tmp/go /usr/local/ && \
-    rm -rf /tmp/go*
-
+#########################
+### INSTALL GO 1.10.7 ###
+#########################
+RUN apk add --no-cache go=1.10.7-r0
 
 ##########################
 ### INSTALL JNLP AGENT ###
 ##########################
-RUN curl --create-dirs -sSLo /usr/share/jenkins/slave.jar https://repo.jenkins-ci.org/public/org/jenkins-ci/main/remoting/3.16/remoting-3.16.jar && \
+RUN curl --create-dirs -sSLo /usr/share/jenkins/slave.jar https://repo.jenkins-ci.org/public/org/jenkins-ci/main/remoting/3.27/remoting-3.27.jar && \
     chmod -R 755 /usr/share/jenkins && \
     chown -R jenkins:jenkins /usr/share/jenkins/slave.jar && \
     chown -R jenkins:jenkins /usr/local
 
 
 ### SET ENV
-ENV PATH=$PATH:${JAVA_HOME}/bin:${M2_HOME}/bin:${GOROOT}/bin \
+ENV PATH=~/.npm-global/bin:$PATH:${JAVA_HOME}/bin:${M2_HOME}/bin:${GOROOT}/bin \
     LANG=C.UTF-8
 
 
